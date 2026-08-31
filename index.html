@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>引越し箱</title>
+<meta name="theme-color" content="#0e1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="箱">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0e1117;
+    --panel: #1a1f2b;
+    --panel2: #222838;
+    --border: #2b3245;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --accent: #e8a33d;          /* 段ボールの色。タスクアプリ（赤）と見分けるため */
+
+    --p-first: #ff4b4b;
+    --p-normal: #6c8cff;
+    --p-later: #5a6274;
+
+    --ok: #2fa27a;
+    --danger: #ff6b6b;
+
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --bar: 56px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  html, body { height: 100%; }
+  /* 画面そのものはスクロールさせず、中身（main）だけを動かす。
+     こうしないとiOS Safariのツールバーが伸び縮みして、下のタブの位置が上下にずれる */
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.5;
+    height: 100dvh; display: flex; flex-direction: column;
+    overflow: hidden; overscroll-behavior: none;
+  }
+  button, input, select, textarea { font-family: inherit; }
+  /* iOS で入力時に画面が拡大しないよう、入力欄は必ず16px以上 */
+  input, select, textarea {
+    font-size: 16px; width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+    -webkit-appearance: none; appearance: none;
+  }
+  select {
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 20px, calc(100% - 13px) 20px;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 5px; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 14px; font-size: 15px;
+    touch-action: manipulation; cursor: pointer;
+  }
+  button:active { opacity: .7; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #241a06; font-weight: 700; }
+  button.danger { border-color: #8b3a3a; color: #ff9b9b; }
+  button.w100 { width: 100%; }
+  .hidden { display: none !important; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .small { font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 13px; word-break: break-all; }
+
+  /* ── 上下のバー ── */
+  .appbar {
+    flex: 0 0 auto; z-index: 20;
+    padding: calc(var(--safe-t) + 10px) 14px 10px;
+    background: rgba(14,17,23,.92); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .appbar h1 { font-size: 17px; margin: 0; flex: 1; }
+  .appbar .sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+  .appbar button { padding: 8px 12px; font-size: 14px; }
+
+  main {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 12px 12px 96px;
+    width: 100%; max-width: 760px; margin: 0 auto;
+  }
+
+  .tabbar {
+    flex: 0 0 auto; z-index: 20;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: rgba(14,17,23,.95); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    padding-bottom: var(--safe-b);
+  }
+  .tabbar button {
+    background: none; border: none; border-radius: 0; color: var(--muted);
+    height: var(--bar); font-size: 11px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px; padding: 0;
+  }
+  .tabbar button .ic { font-size: 19px; line-height: 1; }
+  .tabbar button.active { color: var(--accent); }
+
+  #fab {
+    position: fixed; right: 16px; z-index: 21;
+    bottom: calc(var(--bar) + var(--safe-b) + 16px);
+    width: 56px; height: 56px; border-radius: 28px; padding: 0;
+    background: var(--accent); border: none; color: #241a06;
+    font-size: 28px; line-height: 1; font-weight: 300;
+    box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  }
+
+  /* ── 箱カード ── */
+  .card {
+    position: relative; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 11px 12px 11px 16px; margin-bottom: 8px;
+    display: flex; align-items: flex-start; gap: 10px; min-height: 58px;
+  }
+  .card .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 12px 0 0 12px; }
+  .card .body { flex: 1 1 auto; min-width: 0; }
+  .card .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .card .bid { font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+  .card .sub { font-size: 13px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+  .card .hit { color: var(--accent); font-weight: 600; }
+  .card.opened { opacity: .5; }
+  .card.opened .bid { text-decoration: line-through; }
+  .badge {
+    font-size: 11px; padding: 2px 7px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .chk {
+    flex: 0 0 auto; width: 44px; height: 44px; padding: 0; border-radius: 22px;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+  }
+  .chk.on { color: var(--ok); border-color: #2f5a4b; }
+
+  .filters { display: flex; gap: 8px; margin-bottom: 10px; }
+  .filters select { padding: 9px 10px; font-size: 14px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-bottom: 10px;
+         border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; background: var(--bg); font-size: 13px; padding: 9px 4px; color: var(--muted); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
+
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+  .count { font-size: 12px; color: var(--muted); margin: 2px 0 8px; }
+
+  /* ── シート（下から出るモーダル） ── */
+  .backdrop {
+    position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.55);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .sheet {
+    width: 100%; max-width: 760px; max-height: 92dvh; overflow-y: auto;
+    background: var(--panel); border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--border);
+    padding: 8px 14px calc(var(--safe-b) + 20px);
+    -webkit-overflow-scrolling: touch;
+  }
+  .sheet h2 { font-size: 17px; margin: 6px 0 2px; }
+  .grip { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 4px auto 10px; }
+
+  /* QRを見せるカード。ダークUIの中でも、ここだけは必ず白地・黒 */
+  .qrcard {
+    background: #fff; border-radius: 12px; padding: 14px; margin-top: 14px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .qrcard img { width: 62%; max-width: 240px; height: auto; display: block; image-rendering: pixelated; }
+  .qrcard .qid { color: #111; font-size: 26px; font-weight: 800; letter-spacing: .04em; line-height: 1; }
+  .qrcard .qpl { color: #555; font-size: 13px; }
+  .qrcard .qhint { color: #888; font-size: 11px; text-align: center; line-height: 1.4; }
+
+  /* ── アイテム行 ── */
+  .item { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .item input.nm { flex: 1 1 auto; }
+  .item input.qt { flex: 0 0 68px; text-align: center; }
+  .item button { flex: 0 0 auto; width: 42px; padding: 0; height: 42px; }
+
+  .pribtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .pribtns button.on { border-width: 2px; font-weight: 700; }
+
+  /* ── トースト ── */
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 40;
+    bottom: calc(var(--bar) + var(--safe-b) + 84px);
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5); font-size: 14px; max-width: 92vw;
+  }
+  #toast button { padding: 6px 10px; font-size: 13px; }
+
+  /* ── ラベル印刷 ── */
+  .paperwrap { margin-top: 12px; }
+  .paper {
+    width: 100%; aspect-ratio: 194 / 281; background: #fff;
+    display: grid; gap: 0; margin-bottom: 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  }
+  .paper .lbl { display: block; overflow: hidden; }
+  .paper .lbl svg { width: 100%; height: 100%; display: block; }
+  .pageno { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+
+  @page { size: A4; margin: 8mm; }
+  @media print {
+    html, body { height: auto; overflow: visible; background: #fff; }
+    body { display: block; }
+    .appbar, .tabbar, #fab, #sheetRoot, #toast, .noprint { display: none !important; }
+    main { overflow: visible; padding: 0; max-width: none; margin: 0; }
+    .paperwrap { margin: 0; }
+    .paper {
+      width: 194mm; height: 281mm; aspect-ratio: auto;
+      box-shadow: none; margin: 0; break-after: page; page-break-after: always;
+    }
+    .paper:last-child { break-after: auto; page-break-after: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <h1 id="appTitle">箱<span class="sub" id="subLabel"></span></h1>
+  <button id="dataBtn" aria-label="データ">⚙</button>
+</div>
+
+<main id="main"></main>
+
+<nav class="tabbar" id="tabbar">
+  <button data-v="list"><span class="ic">🗂</span>箱</button>
+  <button data-v="id"><span class="ic">🔢</span>ID</button>
+  <button data-v="label"><span class="ic">🖨</span>ラベル</button>
+</nav>
+
+<button id="fab" aria-label="箱を追加">＋</button>
+<div id="sheetRoot"></div>
+
+<script src="qrcode.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   1. 定数・状態
+   ------------------------------------------------------------
+   データは localStorage に1キーでまとめて置く。
+   触るのは 4章の Store だけ。将来サーバに載せ替えるときは
+   Store の中身だけ差し替えれば、画面側は書き換えなくてよい。
+   ============================================================ */
+
+const LS_DATA = "moving_boxes_v1";
+const LS_PREFS = "moving_boxes_prefs";
+const LS_BACKUP = "moving_boxes_last_backup";
+const DATA_VERSION = 1;
+const UNDO_LIMIT = 20;
+
+const PRIORITIES = {
+  first:  { name: "すぐ開ける", short: "すぐ",   color: "var(--p-first)" },
+  normal: { name: "ふつう",     short: "ふつう", color: "var(--p-normal)" },
+  later:  { name: "あとで",     short: "あとで", color: "var(--p-later)" },
+};
+const PRIORITY_ORDER = ["first", "normal", "later"];
+
+/* A4（余白8mm）に何面並べるか。mm はプレビューの縦横比の計算にだけ使う */
+const LAYOUTS = {
+  6:  { cols: 2, rows: 3, label: "大 6面（97×94mm）" },
+  12: { cols: 3, rows: 4, label: "中 12面（65×70mm）" },
+  24: { cols: 4, rows: 6, label: "小 24面（49×47mm）" },
+};
+const PAPER_W = 194, PAPER_H = 281;   /* A4 - 余白8mm */
+
+let view = "list";
+let prefs = {
+  q: "", group: "", place: "", state: "open", sort: "id",
+  label: { source: "range", prefix: "B", from: 1, to: 30, digits: 3, per: 12, one: "" },
+};
+let undoStack = [];
+let sheetOpen = false;
+let toastTimer = null;
+
+/* ============================================================
+   2. ユーティリティ
+   ============================================================ */
+
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function nowIso() { return new Date().toISOString(); }
+function pad2(n) { return String(n).padStart(2, "0"); }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function fmtDateTime(iso) {
+  if (!iso) return "―";
+  const d = new Date(iso);
+  if (isNaN(d)) return "―";
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/* 全角→半角。検索でもIDでも使う */
+function toHalf(s) {
+  return String(s == null ? "" : s).replace(/[Ａ-Ｚａ-ｚ０-９－ー]/g, c => {
+    if (c === "－" || c === "ー") return "-";
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  });
+}
+/* 検索用にならす。大文字小文字・全角半角・カタカナひらがな・空白の違いを消す */
+function norm(s) {
+  return toHalf(s).toLowerCase()
+    .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[\s　]+/g, "");
+}
+
+/* 箱ID。英数と記号は半角大文字に寄せ、日本語はそのまま通す
+   （「妻-01」「寝室A」のような付け方もできるように） */
+function normId(s) {
+  return toHalf(s).trim().toUpperCase().replace(/[\s　#/?&%]+/g, "");
+}
+function validId(s) { return s.length > 0 && s.length <= 16; }
+
+/* IDの末尾の数字を落とした部分をグループとして扱う。
+   B012→B、妻-01→妻、TOMO_7→TOMO。何も決めなくても勝手に分類が生える */
+function groupOf(id) {
+  const g = String(id).replace(/[-_ ]?\d+$/, "");
+  return g || id;
+}
+
+function showToast(msg, actionLabel, onAction) {
+  const old = $("toast");
+  if (old) old.remove();
+  clearTimeout(toastTimer);
+  const t = el("div", null, null);
+  t.id = "toast";
+  t.appendChild(el("span", null, msg));
+  if (actionLabel) {
+    const b = el("button", null, actionLabel);
+    b.addEventListener("click", () => { t.remove(); onAction(); });
+    t.appendChild(b);
+  }
+  document.body.appendChild(t);
+  toastTimer = setTimeout(() => t.remove(), actionLabel ? 6000 : 2600);
+}
+
+/* ============================================================
+   3. データの形（正規化）
+   ------------------------------------------------------------
+   箱 = { id, place, items:[{name,qty,note}], priority, opened, note,
+          photo, createdAt, updatedAt }
+   古い形（room / 文字列のアイテム）で入ってきても、ここで吸収する。
+   ============================================================ */
+
+function normalizeItem(raw) {
+  if (typeof raw === "string") return { name: raw.trim(), qty: 1, note: "" };
+  const o = raw || {};
+  const qty = Number(o.qty);
+  return {
+    name: String(o.name == null ? "" : o.name).trim(),
+    qty: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1,
+    note: String(o.note == null ? "" : o.note),
+  };
+}
+
+function normalizeBox(raw) {
+  const o = raw || {};
+  const id = normId(o.id);
+  const items = Array.isArray(o.items) ? o.items.map(normalizeItem).filter(i => i.name) : [];
+  return {
+    id,
+    /* 要件の room は place に寄せた。在庫版では「棚」「保管庫」になるため */
+    place: String(o.place != null ? o.place : (o.room != null ? o.room : "")).trim(),
+    items,
+    priority: PRIORITIES[o.priority] ? o.priority : "normal",
+    opened: !!o.opened,
+    note: String(o.note == null ? "" : o.note),
+    photo: typeof o.photo === "string" && o.photo.startsWith("data:") ? o.photo : null,
+    createdAt: o.createdAt || nowIso(),
+    updatedAt: o.updatedAt || o.createdAt || nowIso(),
+  };
+}
+
+function emptyBox(id) {
+  return normalizeBox({ id: id || "", priority: "normal", items: [] });
+}
+
+/* ============================================================
+   4. 保存層
+   ------------------------------------------------------------
+   ここだけ差し替えれば会社版（共有サーバ）になる。
+   localStorage は同期だが、将来の fetch に合わせて最初から async。
+   画面側はこの外の形を知らない。
+   ============================================================ */
+
+const Store = (function () {
+  let cache = new Map();   /* id -> box */
+  let loaded = false;
+
+  function toObj() {
+    return { version: DATA_VERSION, boxes: [...cache.values()] };
+  }
+  function fromObj(obj) {
+    const m = new Map();
+    const arr = obj && Array.isArray(obj.boxes) ? obj.boxes : [];
+    arr.forEach(raw => {
+      const b = normalizeBox(raw);
+      if (validId(b.id) && !m.has(b.id)) m.set(b.id, b);
+    });
+    return m;
+  }
+  async function flush() {
+    try { localStorage.setItem(LS_DATA, JSON.stringify(toObj())); }
+    catch (e) { showToast("保存できませんでした（保存領域が一杯かも）"); }
+  }
+
+  return {
+    async load() {
+      if (loaded) return;
+      let obj = null;
+      try { const raw = localStorage.getItem(LS_DATA); if (raw) obj = JSON.parse(raw); }
+      catch (e) { obj = null; }
+      cache = fromObj(obj);
+      loaded = true;
+    },
+    async all() { await this.load(); return [...cache.values()]; },
+    async get(id) { await this.load(); return cache.get(normId(id)) || null; },
+    async has(id) { await this.load(); return cache.has(normId(id)); },
+    async put(box) {
+      await this.load();
+      const b = normalizeBox(box);
+      const old = cache.get(b.id);
+      b.createdAt = old ? old.createdAt : (b.createdAt || nowIso());
+      b.updatedAt = nowIso();
+      cache.set(b.id, b);
+      await flush();
+      return b;
+    },
+    async remove(id) {
+      await this.load();
+      const ok = cache.delete(normId(id));
+      if (ok) await flush();
+      return ok;
+    },
+    /* 書き出し・読み込み・取り消しはまとめて扱う */
+    async exportObj() { await this.load(); return toObj(); },
+    async replaceAll(obj) { cache = fromObj(obj); loaded = true; await flush(); },
+    async mergeFrom(obj, overwrite) {
+      await this.load();
+      const inc = fromObj(obj);
+      let added = 0, updated = 0, skipped = 0;
+      inc.forEach((b, id) => {
+        if (!cache.has(id)) { cache.set(id, b); added++; }
+        else if (overwrite) { cache.set(id, b); updated++; }
+        else skipped++;
+      });
+      await flush();
+      return { added, updated, skipped };
+    },
+  };
+})();
+
+function loadPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(LS_PREFS) || "{}");
+    prefs = Object.assign(prefs, o, { label: Object.assign(prefs.label, o.label || {}) });
+    prefs.q = "";   /* 検索語は持ち越さない */
+  } catch (e) { /* 既定のまま */ }
+}
+function savePrefs() {
+  try { localStorage.setItem(LS_PREFS, JSON.stringify(prefs)); } catch (e) { /* 続行 */ }
+}
+function markBackup() { try { localStorage.setItem(LS_BACKUP, nowIso()); } catch (e) { /* 続行 */ } }
+function lastBackup() { try { return localStorage.getItem(LS_BACKUP) || ""; } catch (e) { return ""; } }
+
+/* ── 取り消し ── */
+async function withUndo(label, fn) {
+  const before = JSON.stringify(await Store.exportObj());
+  await fn();
+  undoStack.push(before);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  await render();
+  showToast(label, "取り消す", async () => {
+    const s = undoStack.pop();
+    if (!s) return;
+    await Store.replaceAll(JSON.parse(s));
+    await render();
+  });
+}
+
+/* ============================================================
+   5. QRコード
+   ------------------------------------------------------------
+   中身はこのアプリのURL + #箱ID。
+   iPhoneの標準カメラで読むと、そのままこのアプリが開いて
+   その箱の画面になる（アプリ内スキャナが無くても回る）。
+   ============================================================ */
+
+function baseUrl() { return location.href.split("#")[0]; }
+function boxUrl(id) { return baseUrl() + "#" + encodeURIComponent(id); }
+
+/* QRでもURLでも素のIDでも、とにかく箱IDを取り出す。
+   将来ホスト名が変わっても、印刷済みラベルが読めなくならないように */
+function boxIdFrom(text) {
+  const s = String(text == null ? "" : text).trim();
+  const raw = s.includes("#") ? s.slice(s.lastIndexOf("#") + 1) : s;
+  let d = raw;
+  try { d = decodeURIComponent(raw); } catch (e) { /* そのまま */ }
+  const id = normId(d);
+  return validId(id) ? id : "";
+}
+
+function qrModel(text) {
+  const q = qrcode(0, "M");
+  q.addData(text, "Byte");
+  q.make();
+  return q;
+}
+
+/* 画面表示用。<img> の PNG にしておくと、iPhoneで長押し→「写真に追加」で保存できる。
+   スクリーンショットより余計なUIが写らず、印刷にもそのまま使える */
+function qrPngDataUrl(text, px) {
+  const q = qrModel(text);
+  const n = q.getModuleCount(), m = 4, s = n + m * 2;
+  const scale = Math.max(2, Math.floor((px || 640) / s));
+  const c = document.createElement("canvas");
+  c.width = c.height = s * scale;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "#000";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    if (q.isDark(y, x)) g.fillRect((x + m) * scale, (y + m) * scale, scale, scale);
+  }
+  return c.toDataURL("image/png");
+}
+
+/* 印刷用。SVGなら何倍に伸ばしても輪郭が潰れない */
+function qrPath(text) {
+  const q = qrModel(text);
+  const n = q.getModuleCount();
+  let d = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    if (q.isDark(y, x)) d += `M${x} ${y}h1v1h-1z`;
+  }
+  return { d, n };
+}
+
+/* ラベル1枚をまるごとSVGで作る。文字もQRも同じ比率で拡大縮小されるので、
+   画面プレビューと印刷結果がずれない */
+const LABEL_FONT = "Helvetica Neue,Arial,Hiragino Kaku Gothic ProN,Meiryo,sans-serif";
+
+function labelSvg(id, place, aspect) {
+  const W = 100, H = 100 * aspect;
+  const { d, n } = qrPath(boxUrl(id));
+  const quiet = 4, unit = n + quiet * 2;
+  const q = Math.min(W * 0.64, H * 0.58);
+  const qx = (W - q) / 2, qy = H * 0.05;
+  const scale = q / unit;
+  /* IDが長いときは、はみ出さないよう文字を細らせる */
+  const idY = qy + q + H * 0.155;
+  const idSize = H * 0.135 * Math.min(1, 6 / Math.max(4, String(id).length));
+  const plY = idY + H * 0.085, plSize = H * 0.055;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+<rect width="${W}" height="${H}" fill="#fff"/>
+<rect x=".3" y=".3" width="${W - .6}" height="${H - .6}" fill="none" stroke="#c8c8c8" stroke-width=".3" stroke-dasharray="1.6 1.6"/>
+<g transform="translate(${qx} ${qy}) scale(${scale})"><rect width="${unit}" height="${unit}" fill="#fff"/><g transform="translate(${quiet} ${quiet})"><path d="${d}" fill="#000"/></g></g>
+<text x="${W / 2}" y="${idY}" text-anchor="middle" font-family="${LABEL_FONT}" font-weight="700" font-size="${idSize}" fill="#000">${esc(id)}</text>
+${place ? `<text x="${W / 2}" y="${plY}" text-anchor="middle" font-family="${LABEL_FONT}" font-size="${plSize}" fill="#555">${esc(place)}</text>` : ""}
+</svg>`;
+}
+
+/* ============================================================
+   6. 絞り込みと並べ替え
+   ============================================================ */
+
+function boxMatch(b, nq) {
+  if (!nq) return { ok: true, hits: [] };
+  const hits = b.items.filter(i => norm(i.name).includes(nq)).map(i => i.name);
+  const ok = hits.length > 0 || norm(b.id).includes(nq) || norm(b.place).includes(nq) || norm(b.note).includes(nq);
+  return { ok, hits };
+}
+
+function sortBoxes(list) {
+  const s = prefs.sort;
+  return list.sort((a, b) => {
+    if (s === "priority") {
+      const d = PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+      if (d) return d;
+    } else if (s === "updated") {
+      const d = String(b.updatedAt).localeCompare(String(a.updatedAt));
+      if (d) return d;
+    }
+    return a.id.localeCompare(b.id, "ja", { numeric: true });
+  });
+}
+
+async function visibleBoxes() {
+  const all = await Store.all();
+  const nq = norm(prefs.q);
+  const out = [];
+  all.forEach(b => {
+    if (prefs.state === "open" && b.opened) return;
+    if (prefs.state === "opened" && !b.opened) return;
+    if (prefs.group && groupOf(b.id) !== prefs.group) return;
+    if (prefs.place && b.place !== prefs.place) return;
+    const m = boxMatch(b, nq);
+    if (!m.ok) return;
+    out.push({ box: b, hits: m.hits });
+  });
+  const byId = new Map(out.map(o => [o.box.id, o]));
+  return sortBoxes(out.map(o => o.box)).map(b => byId.get(b.id));
+}
+
+/* ============================================================
+   7. 画面の描画
+   ============================================================ */
+
+async function render() {
+  const m = $("main");
+  m.innerHTML = "";
+  [...$("tabbar").children].forEach(b => b.classList.toggle("active", b.dataset.v === view));
+  const all = await Store.all();
+  const open = all.filter(b => !b.opened).length;
+  $("subLabel").textContent = `${all.length}箱・未開梱 ${open}`;
+  $("fab").classList.toggle("hidden", view === "label");
+  if (view === "list") { $("appTitle").firstChild.textContent = "箱"; await renderList(m); }
+  else if (view === "id") { $("appTitle").firstChild.textContent = "ID"; await renderIdView(m); }
+  else { $("appTitle").firstChild.textContent = "ラベル"; await renderLabel(m); }
+}
+
+async function renderList(m) {
+  const all = await Store.all();
+
+  const search = el("input");
+  search.type = "search";
+  search.placeholder = "中身・ID・場所で検索（例: 毛布）";
+  search.value = prefs.q;
+  search.className = "noprint";
+  search.addEventListener("input", () => { prefs.q = search.value; renderListBody(); });
+  m.appendChild(search);
+
+  const filters = el("div", "filters");
+  filters.style.marginTop = "10px";
+
+  const groups = [...new Set(all.map(b => groupOf(b.id)))].sort((a, b) => a.localeCompare(b, "ja"));
+  const gsel = el("select");
+  gsel.appendChild(new Option("すべてのグループ", ""));
+  groups.forEach(g => gsel.appendChild(new Option(g, g)));
+  gsel.value = groups.includes(prefs.group) ? prefs.group : "";
+  gsel.addEventListener("change", () => { prefs.group = gsel.value; savePrefs(); renderListBody(); });
+
+  const places = [...new Set(all.map(b => b.place).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+  const psel = el("select");
+  psel.appendChild(new Option("すべての場所", ""));
+  places.forEach(p => psel.appendChild(new Option(p, p)));
+  psel.value = places.includes(prefs.place) ? prefs.place : "";
+  psel.addEventListener("change", () => { prefs.place = psel.value; savePrefs(); renderListBody(); });
+
+  filters.append(gsel, psel);
+  m.appendChild(filters);
+
+  const seg = el("div", "seg");
+  [["open", "未開梱"], ["opened", "開梱済"], ["all", "すべて"]].forEach(([v, name]) => {
+    const b = el("button", prefs.state === v ? "on" : null, name);
+    b.addEventListener("click", () => { prefs.state = v; savePrefs(); render(); });
+    seg.appendChild(b);
+  });
+  m.appendChild(seg);
+
+  const sortRow = el("div", "row");
+  sortRow.style.marginBottom = "10px";
+  const ssel = el("select");
+  [["id", "ID順"], ["priority", "優先度順"], ["updated", "更新が新しい順"]].forEach(([v, n]) => ssel.appendChild(new Option(n, v)));
+  ssel.value = prefs.sort;
+  ssel.addEventListener("change", () => { prefs.sort = ssel.value; savePrefs(); renderListBody(); });
+  sortRow.appendChild(ssel);
+  m.appendChild(sortRow);
+
+  const body = el("div");
+  body.id = "listBody";
+  m.appendChild(body);
+  await renderListBody();
+}
+
+async function renderListBody() {
+  const body = $("listBody");
+  if (!body) return;
+  body.innerHTML = "";
+  const rows = await visibleBoxes();
+  const all = await Store.all();
+
+  const c = el("div", "count", `${rows.length}件${rows.length !== all.length ? `（全${all.length}件中）` : ""}`);
+  body.appendChild(c);
+
+  if (!rows.length) {
+    const e = el("div", "empty");
+    e.appendChild(el("div", null, all.length ? "条件に合う箱はありません" : "まだ箱がありません"));
+    if (!all.length) e.appendChild(el("div", "small", "右下の ＋ から登録するか、QRを読み込んでください"));
+    body.appendChild(e);
+    return;
+  }
+
+  rows.forEach(({ box: b, hits }) => body.appendChild(boxCard(b, hits)));
+}
+
+function boxCard(b, hits) {
+  const card = el("div", "card" + (b.opened ? " opened" : ""));
+  const bar = el("span", "bar");
+  bar.style.background = PRIORITIES[b.priority].color;
+  card.appendChild(bar);
+
+  const body = el("div", "body");
+  const head = el("div", "head");
+  head.appendChild(el("span", "bid", b.id));
+  if (b.place) head.appendChild(el("span", "badge", b.place));
+  if (b.priority !== "normal") {
+    const p = el("span", "badge", PRIORITIES[b.priority].short);
+    p.style.color = PRIORITIES[b.priority].color;
+    head.appendChild(p);
+  }
+  body.appendChild(head);
+
+  const sub = el("div", "sub");
+  if (hits && hits.length) {
+    sub.appendChild(el("span", "hit", hits.slice(0, 3).join("、")));
+    if (hits.length > 3) sub.appendChild(el("span", null, ` ほか${hits.length - 3}件`));
+  } else if (b.items.length) {
+    sub.textContent = `${b.items.length}点 · ` + b.items.slice(0, 3).map(i => i.name).join("、") + (b.items.length > 3 ? " …" : "");
+  } else {
+    sub.textContent = "中身は未入力";
+  }
+  body.appendChild(sub);
+  body.addEventListener("click", () => openBoxSheet(b.id));
+  card.appendChild(body);
+
+  const chk = el("button", "chk" + (b.opened ? " on" : ""), b.opened ? "↩" : "✓");
+  chk.title = b.opened ? "未開梱に戻す" : "開梱済みにする";
+  chk.addEventListener("click", async e => {
+    e.stopPropagation();
+    await withUndo(b.opened ? `${b.id} を未開梱に戻しました` : `${b.id} を開梱済みにしました`, async () => {
+      const cur = await Store.get(b.id);
+      if (cur) await Store.put(Object.assign({}, cur, { opened: !cur.opened }));
+    });
+  });
+  card.appendChild(chk);
+  return card;
+}
+
+/* ── IDタブ ── */
+async function renderIdView(m) {
+  const box = el("div");
+  box.appendChild(el("p", "muted", "QRを iPhone の標準カメラで写すと、このアプリが開いてその箱の画面になります。QRが読めないときは、ここにIDを直接入れてください。"));
+
+  const lab = el("label", null, "箱ID");
+  const inp = el("input");
+  inp.type = "text";
+  inp.placeholder = "B012";
+  inp.autocapitalize = "characters";
+  inp.style.fontSize = "22px";
+  inp.style.textAlign = "center";
+  inp.style.fontWeight = "700";
+  inp.style.letterSpacing = ".06em";
+
+  const go = el("button", "primary w100", "開く");
+  go.style.marginTop = "10px";
+  const open = () => {
+    const id = boxIdFrom(inp.value);
+    if (!id) { showToast("IDを入れてください"); return; }
+    inp.blur();
+    openBoxSheet(id);
+  };
+  go.addEventListener("click", open);
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); open(); } });
+
+  box.append(lab, inp, go);
+
+  const hint = el("div", "muted small");
+  hint.style.marginTop = "22px";
+  hint.style.lineHeight = "1.7";
+  hint.appendChild(el("div", null, "・登録していないIDを開くと、そのまま新規登録の画面になります。"));
+  hint.appendChild(el("div", null, "・アプリ内のカメラでの読み取りは、次の段階で足す予定です。"));
+  const u = el("div");
+  u.appendChild(document.createTextNode("・このアプリのURL："));
+  u.appendChild(el("code", null, baseUrl()));
+  hint.appendChild(u);
+  box.appendChild(hint);
+
+  m.appendChild(box);
+  setTimeout(() => { if (view === "id") inp.focus(); }, 60);
+}
+
+/* ── ラベルタブ ── */
+async function renderLabel(m) {
+  const L = prefs.label;
+  const all = await Store.all();
+
+  const form = el("div", "noprint");
+  form.appendChild(el("p", "muted", "QRの中身はIDだけなので、中身を決める前にラベルを刷れます。先にまとめて印刷して箱に貼り、詰めながらQRを読んで登録するのが楽です。"));
+
+  const seg = el("div", "seg");
+  [["range", "連番で作る"], ["exist", "登録済みから"]].forEach(([v, n]) => {
+    const b = el("button", L.source === v ? "on" : null, n);
+    b.addEventListener("click", () => { L.source = v; savePrefs(); render(); });
+    seg.appendChild(b);
+  });
+  seg.style.gridTemplateColumns = "1fr 1fr";
+  seg.style.marginTop = "12px";
+  form.appendChild(seg);
+
+  if (L.source === "one") {
+    const r = el("div", "row");
+    r.style.margin = "12px 0 0";
+    r.appendChild(el("div", "muted", `${L.one} の1枚だけを作っています`));
+    form.appendChild(r);
+  } else if (L.source === "range") {
+    form.appendChild(el("label", null, "接頭辞（何でも構いません。人・部屋で分けるならここを変える）"));
+    const pf = el("input");
+    pf.type = "text"; pf.value = L.prefix; pf.placeholder = "B / 妻- / 寝室";
+    pf.addEventListener("input", () => { L.prefix = pf.value; savePrefs(); drawPages(); });
+    form.appendChild(pf);
+
+    const g = el("div", "grid3");
+    g.style.marginTop = "10px";
+    [["from", "開始", 1], ["to", "終了", 30], ["digits", "桁数", 3]].forEach(([k, name]) => {
+      const w = el("div");
+      const l = el("label", null, name);
+      l.style.margin = "0 0 5px";
+      const i = el("input");
+      i.type = "number"; i.inputMode = "numeric"; i.min = k === "digits" ? 1 : 0; i.value = L[k];
+      i.addEventListener("input", () => {
+        const v = parseInt(i.value, 10);
+        L[k] = Number.isFinite(v) ? v : (k === "digits" ? 3 : 1);
+        savePrefs(); drawPages();
+      });
+      w.append(l, i);
+      g.appendChild(w);
+    });
+    form.appendChild(g);
+  } else {
+    form.appendChild(el("label", null, "登録済みの箱すべてのラベルを作ります"));
+    form.appendChild(el("div", "muted small", `${all.length}件`));
+  }
+
+  form.appendChild(el("label", null, "A4 1枚あたりの面数"));
+  const ps = el("select");
+  Object.keys(LAYOUTS).forEach(k => ps.appendChild(new Option(LAYOUTS[k].label, k)));
+  ps.value = String(L.per);
+  ps.addEventListener("change", () => { L.per = Number(ps.value); savePrefs(); drawPages(); });
+  form.appendChild(ps);
+
+  const btn = el("button", "primary w100", "🖨 印刷する");
+  btn.style.marginTop = "14px";
+  btn.addEventListener("click", () => window.print());
+  form.appendChild(btn);
+
+  const note = el("div", "muted small");
+  note.style.marginTop = "8px";
+  note.textContent = "iPhone からでも印刷できますが、まとめて刷るならパソコンでこのURLを開くほうが確実です（データが無くても連番ラベルは作れます）。";
+  form.appendChild(note);
+
+  m.appendChild(form);
+
+  const wrap = el("div", "paperwrap");
+  wrap.id = "paperwrap";
+  m.appendChild(wrap);
+  drawPages();
+}
+
+async function labelTargets() {
+  const L = prefs.label;
+  if (L.source === "one") {
+    const id = normId(L.one);
+    return validId(id) ? [{ id, place: "" }] : [];
+  }
+  if (L.source === "exist") {
+    const all = await Store.all();
+    return sortBoxes(all).map(b => ({ id: b.id, place: b.place }));
+  }
+  const from = Math.min(L.from, L.to), to = Math.max(L.from, L.to);
+  const n = Math.max(0, Math.min(300, to - from + 1));   /* 事故防止に上限 */
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const num = String(from + i).padStart(Math.max(1, Math.min(6, L.digits)), "0");
+    const id = normId(L.prefix + num);
+    if (validId(id)) out.push({ id, place: "" });
+  }
+  return out;
+}
+
+async function drawPages() {
+  const wrap = $("paperwrap");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const L = prefs.label;
+  const lay = LAYOUTS[L.per] || LAYOUTS[12];
+  const targets = await labelTargets();
+
+  if (!targets.length) {
+    wrap.appendChild(el("div", "empty noprint", "ラベルにする箱がありません"));
+    return;
+  }
+  /* 登録済みの場所を拾って、ラベルにも部屋名を出す */
+  const known = new Map((await Store.all()).map(b => [b.id, b.place]));
+  const aspect = (PAPER_H / lay.rows) / (PAPER_W / lay.cols);
+
+  const info = el("div", "count noprint", `${targets.length}枚 / ${Math.ceil(targets.length / L.per)}ページ`);
+  wrap.appendChild(info);
+
+  for (let p = 0; p * L.per < targets.length; p++) {
+    const page = el("div", "paper");
+    page.style.gridTemplateColumns = `repeat(${lay.cols}, 1fr)`;
+    page.style.gridTemplateRows = `repeat(${lay.rows}, 1fr)`;
+    targets.slice(p * L.per, (p + 1) * L.per).forEach(t => {
+      const cell = el("div", "lbl");
+      cell.innerHTML = labelSvg(t.id, t.place || known.get(t.id) || "", aspect);
+      page.appendChild(cell);
+    });
+    wrap.appendChild(page);
+  }
+}
+
+/* ============================================================
+   8. シート
+   ============================================================ */
+
+/* file:// で開いたときは replaceState が弾かれることがあるので、失敗しても止めない */
+function setHash(h) {
+  try { history.replaceState(null, "", h || (location.pathname + location.search)); }
+  catch (e) { /* URLが変わらないだけで、動作には影響しない */ }
+}
+
+function closeSheet() {
+  $("sheetRoot").innerHTML = "";
+  sheetOpen = false;
+  if (location.hash) setHash("");
+}
+function openSheet(build) {
+  const back = el("div", "backdrop");
+  const sheet = el("div", "sheet");
+  sheet.appendChild(el("div", "grip"));
+  build(sheet);
+  back.appendChild(sheet);
+  back.addEventListener("click", e => { if (e.target === back) closeSheet(); });
+  $("sheetRoot").innerHTML = "";
+  $("sheetRoot").appendChild(back);
+  sheetOpen = true;
+  return sheet;
+}
+
+/* 箱の詳細＝編集フォーム。タップ数を減らすため表示と編集を分けていない */
+async function openBoxSheet(id, prefill) {
+  const wanted = normId(id || "");
+  const existing = wanted ? await Store.get(wanted) : null;
+  const isNew = !existing;
+  const draft = existing ? JSON.parse(JSON.stringify(existing)) : emptyBox(wanted || (prefill || ""));
+  const all = await Store.all();
+  const places = [...new Set(all.map(b => b.place).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+
+  if (wanted) setHash("#" + encodeURIComponent(wanted));
+
+  openSheet(sheet => {
+    sheet.appendChild(el("h2", null, isNew ? (wanted ? `${wanted} を新しく登録` : "箱を追加") : `${draft.id} の中身`));
+    if (isNew && wanted) sheet.appendChild(el("div", "muted small", "このIDはまだ登録されていません。中身を入れて保存してください。"));
+
+    /* ID */
+    sheet.appendChild(el("label", null, "箱ID"));
+    const idIn = el("input");
+    idIn.type = "text"; idIn.value = draft.id; idIn.autocapitalize = "characters";
+    idIn.style.fontWeight = "700"; idIn.style.letterSpacing = ".04em";
+    sheet.appendChild(idIn);
+
+    /* 場所 */
+    sheet.appendChild(el("label", null, "場所（行き先の部屋・棚）"));
+    const plIn = el("input");
+    plIn.type = "text"; plIn.value = draft.place; plIn.placeholder = "寝室";
+    plIn.setAttribute("list", "placeList");
+    const dl = el("datalist"); dl.id = "placeList";
+    places.forEach(p => dl.appendChild(new Option(p, p)));
+    sheet.append(plIn, dl);
+
+    /* 優先度 */
+    sheet.appendChild(el("label", null, "開梱の優先度"));
+    const pb = el("div", "pribtns");
+    PRIORITY_ORDER.forEach(k => {
+      const b = el("button", draft.priority === k ? "on" : null, PRIORITIES[k].name);
+      b.style.fontSize = "13px";
+      if (draft.priority === k) b.style.borderColor = PRIORITIES[k].color;
+      b.addEventListener("click", () => {
+        draft.priority = k;
+        [...pb.children].forEach((c, i) => {
+          const on = PRIORITY_ORDER[i] === k;
+          c.classList.toggle("on", on);
+          c.style.borderColor = on ? PRIORITIES[k].color : "";
+        });
+      });
+      pb.appendChild(b);
+    });
+    sheet.appendChild(pb);
+
+    /* 開梱済み */
+    const opBtn = el("button", "w100", "");
+    opBtn.style.marginTop = "10px";
+    const paintOpen = () => {
+      opBtn.textContent = draft.opened ? "✓ 開梱済み（タップで未開梱に戻す）" : "未開梱（タップで開梱済みに）";
+      opBtn.style.color = draft.opened ? "var(--ok)" : "";
+      opBtn.style.borderColor = draft.opened ? "#2f5a4b" : "";
+    };
+    paintOpen();
+    opBtn.addEventListener("click", () => { draft.opened = !draft.opened; paintOpen(); });
+    sheet.appendChild(opBtn);
+
+    /* 中身 */
+    sheet.appendChild(el("label", null, "中身"));
+    const itemBox = el("div");
+    const paintItems = () => {
+      itemBox.innerHTML = "";
+      draft.items.forEach((it, i) => {
+        const row = el("div", "item");
+        const nm = el("input", "nm"); nm.type = "text"; nm.value = it.name;
+        nm.addEventListener("input", () => { it.name = nm.value; });
+        const qt = el("input", "qt"); qt.type = "number"; qt.inputMode = "numeric"; qt.min = 1; qt.value = it.qty;
+        qt.addEventListener("input", () => { const v = parseInt(qt.value, 10); it.qty = Number.isFinite(v) && v > 0 ? v : 1; });
+        const rm = el("button", null, "×");
+        rm.addEventListener("click", () => { draft.items.splice(i, 1); paintItems(); });
+        row.append(nm, qt, rm);
+        itemBox.appendChild(row);
+      });
+      if (!draft.items.length) itemBox.appendChild(el("div", "muted small", "まだ何も入っていません"));
+    };
+    paintItems();
+    sheet.appendChild(itemBox);
+
+    const addRow = el("div", "item");
+    addRow.style.marginTop = "8px";
+    const addIn = el("input", "nm");
+    addIn.type = "text"; addIn.placeholder = "追加するもの（例: 冬用毛布）"; addIn.enterKeyHint = "done";
+    const addBtn = el("button", null, "＋");
+    const doAdd = () => {
+      const v = addIn.value.trim();
+      if (!v) return;
+      /* 「毛布, 枕, シーツ」のようにまとめて入れられる */
+      v.split(/[,、\n]/).map(s => s.trim()).filter(Boolean).forEach(name => draft.items.push({ name, qty: 1, note: "" }));
+      addIn.value = "";
+      paintItems();
+      addIn.focus();
+    };
+    addBtn.addEventListener("click", doAdd);
+    addIn.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    addRow.append(addIn, addBtn);
+    sheet.appendChild(addRow);
+
+    /* メモ */
+    sheet.appendChild(el("label", null, "メモ"));
+    const noteIn = el("textarea");
+    noteIn.value = draft.note; noteIn.placeholder = "上に載せない / 割れ物 など";
+    sheet.appendChild(noteIn);
+
+    /* QR。ここだけ白地・黒にしてある（ダークのままだと印刷しても読めない） */
+    const qrWrap = el("div");
+    const paintQr = () => {
+      qrWrap.innerHTML = "";
+      const cur = normId(idIn.value);
+      if (!validId(cur)) return;
+      const card = el("div", "qrcard");
+      const img = el("img");
+      img.src = qrPngDataUrl(boxUrl(cur), 640);
+      img.alt = `${cur} のQRコード`;
+      card.appendChild(img);
+      card.appendChild(el("div", "qid", cur));
+      const pl = plIn.value.trim();
+      if (pl) card.appendChild(el("div", "qpl", pl));
+      card.appendChild(el("div", "qhint", "長押しすると写真に保存できます。標準カメラでこれを写すと、この箱の画面が開きます。"));
+      qrWrap.appendChild(card);
+
+      const pr = el("button", "w100", "🖨 このラベルだけ印刷");
+      pr.style.marginTop = "10px";
+      pr.addEventListener("click", () => {
+        prefs.label.source = "one";
+        prefs.label.one = cur;
+        savePrefs();
+        closeSheet();
+        view = "label";
+        render().then(() => setTimeout(() => window.print(), 300));
+      });
+      qrWrap.appendChild(pr);
+    };
+    idIn.addEventListener("input", paintQr);
+    plIn.addEventListener("input", paintQr);
+    paintQr();
+    sheet.appendChild(qrWrap);
+
+    /* 保存・削除 */
+    const save = el("button", "primary w100", "保存");
+    save.style.marginTop = "16px";
+    save.addEventListener("click", async () => {
+      const newId = normId(idIn.value);
+      if (!validId(newId)) { showToast("箱IDを入れてください（16文字まで）"); return; }
+      if (newId !== draft.id && await Store.has(newId)) { showToast(`${newId} は既に使われています`); return; }
+      const oldId = draft.id;
+      draft.id = newId;
+      draft.place = plIn.value.trim();
+      draft.note = noteIn.value;
+      draft.items = draft.items.filter(i => i.name.trim());
+      closeSheet();
+      await withUndo(isNew ? `${newId} を登録しました` : `${newId} を保存しました`, async () => {
+        if (!isNew && oldId && oldId !== newId) await Store.remove(oldId);
+        await Store.put(draft);
+      });
+    });
+    sheet.appendChild(save);
+
+    if (!isNew) {
+      const del = el("button", "danger w100", "この箱を削除");
+      del.style.marginTop = "8px";
+      del.addEventListener("click", async () => {
+        const target = draft.id;
+        closeSheet();
+        await withUndo(`${target} を削除しました`, async () => { await Store.remove(target); });
+      });
+      sheet.appendChild(del);
+    }
+
+    const cancel = el("button", "w100", "閉じる");
+    cancel.style.marginTop = "8px";
+    cancel.addEventListener("click", closeSheet);
+    sheet.appendChild(cancel);
+
+    if (isNew && !wanted) setTimeout(() => idIn.focus(), 80);
+  });
+}
+
+/* ── データ（書き出し・読み込み・全消去） ── */
+async function openDataSheet() {
+  const all = await Store.all();
+  const lb = lastBackup();
+
+  openSheet(sheet => {
+    sheet.appendChild(el("h2", null, "データ"));
+    sheet.appendChild(el("div", "muted small", `箱 ${all.length}件 / 中身 ${all.reduce((n, b) => n + b.items.length, 0)}点`));
+    sheet.appendChild(el("div", "muted small", `前回の書き出し：${lb ? fmtDateTime(lb) : "まだありません"}`));
+
+    const warn = el("div", "muted small");
+    warn.style.margin = "10px 0 0";
+    warn.style.lineHeight = "1.6";
+    warn.textContent = "データはこの端末のブラウザの中だけにあります。ブラウザの履歴やサイトデータを消すと一緒に消えます。ときどき書き出しておいてください。";
+    sheet.appendChild(warn);
+
+    const ex = el("button", "primary w100", "⬇ JSONに書き出す");
+    ex.style.marginTop = "14px";
+    ex.addEventListener("click", async () => {
+      const obj = await Store.exportObj();
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+      const a = el("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `boxes-${todayStr()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      markBackup();
+      showToast("書き出しました");
+    });
+    sheet.appendChild(ex);
+
+    sheet.appendChild(el("label", null, "読み込み"));
+    const mode = el("div", "seg");
+    mode.style.gridTemplateColumns = "1fr 1fr";
+    let impMode = "merge";
+    [["merge", "追加（既存は残す）"], ["replace", "置き換え（全消去）"]].forEach(([v, n]) => {
+      const b = el("button", v === impMode ? "on" : null, n);
+      b.addEventListener("click", () => {
+        impMode = v;
+        [...mode.children].forEach((c, i) => c.classList.toggle("on", i === (v === "merge" ? 0 : 1)));
+      });
+      mode.appendChild(b);
+    });
+    sheet.appendChild(mode);
+
+    const file = el("input");
+    file.type = "file"; file.accept = "application/json,.json";
+    file.style.marginTop = "8px";
+    file.addEventListener("change", async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      let obj = null;
+      try { obj = JSON.parse(await f.text()); }
+      catch (e) { showToast("JSONとして読めませんでした"); file.value = ""; return; }
+      if (!obj || !Array.isArray(obj.boxes)) { showToast("このアプリの書き出しファイルではないようです"); file.value = ""; return; }
+      closeSheet();
+      await withUndo(
+        impMode === "replace" ? "置き換えました" : "読み込みました",
+        async () => {
+          if (impMode === "replace") await Store.replaceAll(obj);
+          else {
+            const r = await Store.mergeFrom(obj, false);
+            setTimeout(() => showToast(`追加 ${r.added}件 / 同じIDは残しました ${r.skipped}件`), 200);
+          }
+        }
+      );
+    });
+    sheet.appendChild(file);
+
+    const clr = el("button", "danger w100", "すべて消す");
+    clr.style.marginTop = "18px";
+    clr.addEventListener("click", () => {
+      openSheet(s2 => {
+        s2.appendChild(el("h2", null, "本当にすべて消しますか"));
+        s2.appendChild(el("div", "muted small", `${all.length}件の箱が消えます。直後なら「取り消す」で戻せますが、先に書き出しておくと安全です。`));
+        const yes = el("button", "danger w100", "消す");
+        yes.style.marginTop = "14px";
+        yes.addEventListener("click", async () => {
+          closeSheet();
+          await withUndo("すべて消しました", async () => { await Store.replaceAll({ version: DATA_VERSION, boxes: [] }); });
+        });
+        const no = el("button", "w100", "やめる");
+        no.style.marginTop = "8px";
+        no.addEventListener("click", closeSheet);
+        s2.append(yes, no);
+      });
+    });
+    sheet.appendChild(clr);
+
+    const close = el("button", "w100", "閉じる");
+    close.style.marginTop = "8px";
+    close.addEventListener("click", closeSheet);
+    sheet.appendChild(close);
+  });
+}
+
+/* ============================================================
+   9. 起動
+   ============================================================ */
+
+async function handleHash() {
+  const id = boxIdFrom(location.hash);
+  if (!id) return;
+  await openBoxSheet(id);
+}
+
+async function init() {
+  loadPrefs();
+  await Store.load();
+
+  $("tabbar").addEventListener("click", e => {
+    const b = e.target.closest("button[data-v]");
+    if (!b) return;
+    view = b.dataset.v;
+    render().then(() => { $("main").scrollTop = 0; });
+  });
+  $("fab").addEventListener("click", () => openBoxSheet(null));
+  $("dataBtn").addEventListener("click", openDataSheet);
+  window.addEventListener("keydown", e => { if (e.key === "Escape" && sheetOpen) closeSheet(); });
+  /* 標準カメラでQRを読んだとき、既に開いていればここに入ってくる */
+  window.addEventListener("hashchange", handleHash);
+
+  await render();
+  await handleHash();
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => { /* 圏外でも動く */ });
+    });
+  }
+}
+
+init();
+</script>
+</body>
+</html>
