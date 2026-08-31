@@ -181,6 +181,24 @@
   .qrcard .qpl { color: #555; font-size: 13px; }
   .qrcard .qhint { color: #888; font-size: 11px; text-align: center; line-height: 1.4; }
 
+  /* ── カメラ ── */
+  .camwrap {
+    position: relative; width: 100%; aspect-ratio: 1 / 1; margin-top: 12px;
+    background: #000; border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .camwrap video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .camframe {
+    position: absolute; inset: 15%; border: 3px solid rgba(232,163,61,.95); border-radius: 12px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,.3); pointer-events: none;
+  }
+  .camoff {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center;
+    color: var(--muted); font-size: 13px; line-height: 1.6;
+  }
+  .camstatus { margin-top: 8px; min-height: 20px; line-height: 1.6; }
+
   /* ── アイテム行 ── */
   .item { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
   .item input.nm { flex: 1 1 auto; }
@@ -237,7 +255,7 @@
 
 <nav class="tabbar" id="tabbar">
   <button data-v="list"><span class="ic">🗂</span>箱</button>
-  <button data-v="id"><span class="ic">🔢</span>ID</button>
+  <button data-v="scan"><span class="ic">📷</span>スキャン</button>
   <button data-v="label"><span class="ic">🖨</span>ラベル</button>
 </nav>
 
@@ -245,6 +263,7 @@
 <div id="sheetRoot"></div>
 
 <script src="qrcode.js"></script>
+<script src="jsqr.js"></script>
 <script>
 "use strict";
 
@@ -280,6 +299,7 @@ const PAPER_W = 194, PAPER_H = 281;   /* A4 - 余白8mm */
 let view = "list";
 let prefs = {
   q: "", group: "", place: "", state: "open", sort: "id",
+  camOk: false,           /* 一度カメラを許可したか。以後はスキャンタブで自動起動する */
   label: { source: "range", prefix: "B", from: 1, to: 30, digits: 3, per: 12, one: "" },
 };
 let undoStack = [];
@@ -631,8 +651,9 @@ async function render() {
   const open = all.filter(b => !b.opened).length;
   $("subLabel").textContent = `${all.length}箱・未開梱 ${open}`;
   $("fab").classList.toggle("hidden", view === "label");
+  if (view !== "scan") stopScan();
   if (view === "list") { $("appTitle").firstChild.textContent = "箱"; await renderList(m); }
-  else if (view === "id") { $("appTitle").firstChild.textContent = "ID"; await renderIdView(m); }
+  else if (view === "scan") { $("appTitle").firstChild.textContent = "スキャン"; await renderScanView(m); }
   else { $("appTitle").firstChild.textContent = "ラベル"; await renderLabel(m); }
 }
 
@@ -754,12 +775,141 @@ function boxCard(b, hits) {
   return card;
 }
 
-/* ── IDタブ ── */
-async function renderIdView(m) {
-  const box = el("div");
-  box.appendChild(el("p", "muted", "QRを iPhone の標準カメラで写すと、このアプリが開いてその箱の画面になります。QRが読めないときは、ここにIDを直接入れてください。"));
+/* ── スキャンタブ ──
+   iOSでは、標準カメラでQRを読んでもホーム画面のアプリには渡らず、必ずSafariが開く。
+   しかもSafariとホーム画面アプリは保存領域が別なので、そちらで開いても箱のデータが無い。
+   だから読み取りは「このアプリの中のカメラ」でやる必要がある。 */
 
-  const lab = el("label", null, "箱ID");
+const scanner = { stream: null, timer: null, canvas: null, detector: null, on: false };
+
+function stopScan() {
+  scanner.on = false;
+  if (scanner.timer) { clearTimeout(scanner.timer); scanner.timer = null; }
+  if (scanner.stream) { scanner.stream.getTracks().forEach(t => t.stop()); scanner.stream = null; }
+}
+
+async function scanTick(video, onHit) {
+  if (!scanner.on) return;
+  let text = "";
+  try {
+    if (video.readyState >= 2 && video.videoWidth) {
+      if (scanner.detector) {
+        const r = await scanner.detector.detect(video);
+        if (r && r.length) text = r[0].rawValue;
+      } else if (window.jsQR) {
+        const c = scanner.canvas || (scanner.canvas = document.createElement("canvas"));
+        const w = video.videoWidth, h = video.videoHeight;
+        /* 等倍だと重いので、長辺640pxまで縮めてから解析する */
+        const s = Math.min(1, 640 / Math.max(w, h));
+        c.width = Math.round(w * s); c.height = Math.round(h * s);
+        const g = c.getContext("2d", { willReadFrequently: true });
+        g.drawImage(video, 0, 0, c.width, c.height);
+        const img = g.getImageData(0, 0, c.width, c.height);
+        const r = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+        if (r) text = r.data;
+      }
+    }
+  } catch (e) { /* 1コマ失敗しても読み続ける */ }
+
+  if (text) {
+    const id = boxIdFrom(text);
+    if (id) {
+      stopScan();
+      if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) { /* 非対応 */ } }
+      onHit(id);
+      return;
+    }
+  }
+  scanner.timer = setTimeout(() => scanTick(video, onHit), 120);
+}
+
+async function startScan(video, setStatus, onHit) {
+  if (!window.isSecureContext) {
+    setStatus("この開き方ではカメラが使えません（https で開く必要があります）。下からIDを入れてください。");
+    return false;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus("このブラウザではカメラが使えません。下からIDを入れてください。");
+    return false;
+  }
+  setStatus("カメラを準備しています…");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
+      audio: false,
+    });
+  } catch (e) {
+    const n = e && e.name;
+    if (n === "NotAllowedError") setStatus("カメラの使用が許可されていません。iPhoneの「設定 → アプリ → Safari → カメラ」を「確認」か「許可」にしてから、開き直してください。");
+    else if (n === "NotFoundError" || n === "OverconstrainedError") setStatus("使えるカメラが見つかりませんでした。");
+    else setStatus("カメラを開けませんでした（" + (n || "原因不明") + "）。");
+    return false;
+  }
+  scanner.stream = stream;
+  video.srcObject = stream;
+  try { await video.play(); } catch (e) { /* iOSでたまに拒否されるが、その後再生されることが多い */ }
+
+  if ("BarcodeDetector" in window) {
+    try { scanner.detector = new window.BarcodeDetector({ formats: ["qr_code"] }); }
+    catch (e) { scanner.detector = null; }
+  }
+  scanner.on = true;
+  setStatus("QRを枠に入れてください");
+  scanTick(video, onHit);
+  return true;
+}
+
+async function renderScanView(m) {
+  const box = el("div");
+
+  const cam = el("div", "camwrap");
+  const video = el("video");
+  video.playsInline = true;
+  video.muted = true;
+  video.setAttribute("playsinline", "");
+  video.setAttribute("muted", "");
+  video.setAttribute("autoplay", "");
+  cam.appendChild(video);
+  const frame = el("div", "camframe");
+  frame.classList.add("hidden");
+  cam.appendChild(frame);
+
+  const off = el("div", "camoff");
+  const openBtn = el("button", "primary", "📷 カメラを開く");
+  off.appendChild(openBtn);
+  off.appendChild(el("div", null, "箱に貼ったQRを読みます"));
+  cam.appendChild(off);
+  box.appendChild(cam);
+
+  const status = el("div", "muted small camstatus");
+  box.appendChild(status);
+  const setStatus = t => { status.textContent = t; };
+
+  const onHit = id => {
+    frame.classList.add("hidden");
+    off.classList.remove("hidden");
+    setStatus(`${id} を読みました`);
+    openBoxSheet(id);
+  };
+
+  const begin = async () => {
+    off.classList.add("hidden");
+    const ok = await startScan(video, setStatus, onHit);
+    frame.classList.toggle("hidden", !ok);
+    if (ok) {
+      prefs.camOk = true; savePrefs();
+      openBtn.textContent = "📷 もう一度読む";
+    } else {
+      off.classList.remove("hidden");
+    }
+  };
+  openBtn.addEventListener("click", begin);
+  /* 一度許可したあとは、タブを開くだけで読み取りが始まる */
+  if (prefs.camOk) setTimeout(() => { if (view === "scan") begin(); }, 60);
+
+  /* QRが破れている・貼り忘れたとき用 */
+  const lab = el("label", null, "箱ID（QRが読めないとき）");
   const inp = el("input");
   inp.type = "text";
   inp.placeholder = "B012";
@@ -785,8 +935,8 @@ async function renderIdView(m) {
   const hint = el("div", "muted small");
   hint.style.marginTop = "22px";
   hint.style.lineHeight = "1.7";
-  hint.appendChild(el("div", null, "・登録していないIDを開くと、そのまま新規登録の画面になります。"));
-  hint.appendChild(el("div", null, "・アプリ内のカメラでの読み取りは、次の段階で足す予定です。"));
+  hint.appendChild(el("div", null, "・登録していないIDを読むと、そのまま新規登録の画面になります。"));
+  hint.appendChild(el("div", null, "・iPhone標準のカメラでQRを写すと、このアプリではなくSafariが開きます。Safariとホーム画面のアプリはデータが別々なので、読み取りは必ずこの画面から行ってください。"));
   const u = el("div");
   u.appendChild(document.createTextNode("・このアプリのURL："));
   u.appendChild(el("code", null, baseUrl()));
@@ -794,7 +944,6 @@ async function renderIdView(m) {
   box.appendChild(hint);
 
   m.appendChild(box);
-  setTimeout(() => { if (view === "id") inp.focus(); }, 60);
 }
 
 /* ── ラベルタブ ── */
@@ -941,6 +1090,8 @@ function closeSheet() {
   $("sheetRoot").innerHTML = "";
   sheetOpen = false;
   if (location.hash) setHash("");
+  /* 続けて次の箱を読めるよう、スキャン画面に戻ったらカメラを開き直す */
+  if (view === "scan" && !scanner.on) render();
 }
 function openSheet(build) {
   const back = el("div", "backdrop");
@@ -1251,8 +1402,14 @@ async function init() {
   $("tabbar").addEventListener("click", e => {
     const b = e.target.closest("button[data-v]");
     if (!b) return;
+    stopScan();
     view = b.dataset.v;
     render().then(() => { $("main").scrollTop = 0; });
+  });
+  /* 別のアプリに切り替えたらカメラを止める（バッテリーとプライバシーのため） */
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopScan();
+    else if (view === "scan" && !sheetOpen && !scanner.on) render();
   });
   $("fab").addEventListener("click", () => openBoxSheet(null));
   $("dataBtn").addEventListener("click", openDataSheet);

@@ -2,11 +2,12 @@
    ページ本体は「まずネットワーク、だめならキャッシュ」。
    更新したファイルをGitHubに上げれば、次にオンラインで開いたときに反映されます。 */
 
-const CACHE = "moving-boxes-v1";
+const CACHE = "moving-boxes-v2";
 const ASSETS = [
   "./",
   "./index.html",
   "./qrcode.js",
+  "./jsqr.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
